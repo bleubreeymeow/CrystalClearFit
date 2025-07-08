@@ -8,15 +8,15 @@ def transform_list_hkl_p63_p65(hkl_list):
     in the p65 structure.
     :param hkl_list: List of hkl vectors
     :return: List of hkl vectors in the new cell
-    2c,-2a-2b,a-b
+    -9a,c,9b
     """
     # Convert hkl_list to a TensorFlow tensor
     hkl_list = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
 
     # Apply the transformation using TensorFlow operations
-    h_new = 2 * hkl_list[:, 2]
-    k_new = -2 * (hkl_list[:, 0] + hkl_list[:, 1])
-    l_new = hkl_list[:, 0] - hkl_list[:, 1]
+    h_new = -9 * hkl_list[:, 0]
+    k_new = hkl_list[:, 2]
+    l_new = 9 * hkl_list[:, 1]
 
     # Stack the new h, k, l components into a single tensor
     result = tf.stack([h_new, k_new, l_new], axis=1)
@@ -34,17 +34,39 @@ def get_atomic_form_factor(qnorm, atom):
     :param qnorm: Norm of the hkl vector |Q|
     :param atom: Type of atom (atm only Pr, Ni or O is possible)
     :return: The atomic form factor
+
+    Oxidation states:
+    Pr: 4+
+    Ba: 2+
+    Cu: 2+
+    O: 2+
+
+    value of O is used becuase there is no O2-
+
+    or
+
+    Pr: 1+
+    Ba: 2+
+    Cu: 3+
+    O: 2-
+
+
     """
     # Define values for Pr, Ni, O atoms as TensorFlow constants
     Pr_vals = {
-        'a': tf.constant([21.3727, 19.7491, 12.1329, 0.97578], dtype=tf.float32),
-        'b': tf.constant([2.64520, 0.214299, 15.323, 36.4065], dtype=tf.float32),
-        'c': tf.constant(1.77132, dtype=tf.float32),
+        'a': tf.constant([20.9413, 20.0539, 12.4668, 0.296689], dtype=tf.float32),
+        'b': tf.constant([2.54467, 0.202481, 14.8137, 45.4643], dtype=tf.float32),
+        'c': tf.constant(1.24285, dtype=tf.float32),
     }
-    Ni_vals = {
-        'a': tf.constant([12.1271, 7.34625, 4.8940, 1.67865], dtype=tf.float32),
-        'b': tf.constant([3.77755, 0.25070000000000003, 10.52465, 44.25235], dtype=tf.float32),
-        'c': tf.constant(0.94775, dtype=tf.float32),
+    Ba_vals = {
+        'a': tf.constant([20.1807, 19.1136, 10.9054, 0.77634], dtype=tf.float32),
+        'b': tf.constant([3.21367, 0.28331, 20.0558, 51.746], dtype=tf.float32),
+        'c': tf.constant(3.02902, dtype=tf.float32),
+    }
+    Cu_vals = {
+        'a': tf.constant([11.8168, 7.11181, 5.78135, 1.14523], dtype=tf.float32),
+        'b': tf.constant([3.37484, 0.244078, 7.9876, 19.897], dtype=tf.float32),
+        'c': tf.constant(1.14431, dtype=tf.float32),
     }
     O_vals = {
         'a': tf.constant([3.7504, 2.84294, 1.54298, 1.652091], dtype=tf.float32),
@@ -55,8 +77,10 @@ def get_atomic_form_factor(qnorm, atom):
     # Choose atom values based on the input atom
     if atom == "Pr":
         vals_dict = Pr_vals
-    elif atom == "Ni":
-        vals_dict = Ni_vals
+    elif atom == "Ba":
+        vals_dict = Ba_vals
+    elif atom == "Cu":
+        vals_dict = Cu_vals
     else:
         vals_dict = O_vals
 
@@ -101,8 +125,9 @@ def get_structure_factors(hkl_batch, structure):
 
     # Get per-atom form factors per hkl
     fq_table = {
-        "Ni": tf.vectorized_map(lambda q: tf.cast(get_atomic_form_factor(q, "Ni"), tf.complex64), qnorms),
         "Pr": tf.vectorized_map(lambda q: tf.cast(get_atomic_form_factor(q, "Pr"), tf.complex64), qnorms),
+        "Ba": tf.vectorized_map(lambda q: tf.cast(get_atomic_form_factor(q, "Ba"), tf.complex64), qnorms),
+        "Cu": tf.vectorized_map(lambda q: tf.cast(get_atomic_form_factor(q, "Cu"), tf.complex64), qnorms),
         "O": tf.vectorized_map(lambda q: tf.cast(get_atomic_form_factor(q, "O"), tf.complex64), qnorms)
     }  # Each: [N]
 
@@ -168,52 +193,6 @@ def shift_atoms_p63(Pr1_1_dx, Pr1_1_dy, O1_1_dy, O1_1_dz, Ni1_1_dy, Ni1_2_dy):
     return res
 
 
-def shift_atoms_p65(Pr1_2_dx, O1_1_dy, O1_1_dz, O_1_2_dy, O_1_2_dz, Ni1_2_dy):
-    """
-    Function to shift atoms in the P65 structure.
-    :param Pr1_2_dx: Shift in the x direction for Pr atoms
-    :param O1_1_dy: Shift in the y direction for O1_1 atoms
-    :param O1_1_dz: Shift in the z direction for O1_1 atoms
-    :param O_1_2_dy: Shift in the y direction for O_1_2 atoms
-    :param O_1_2_dz: Shift in the z direction for O_1_2 atoms
-    :param Ni1_2_dy: Shift in the y direction for Ni1_2 atoms
-    :return: Structure of shifted atoms
-    """
-    res = [
-        ['Pr', 59, [0.25, 0.25, 0.0]],
-        ['Pr', 59, [0.75, 0.75, 0.0]],
-        ['Pr', 59, [0.75, 0.25, 0.0]],
-        ['Pr', 59, [0.25, 0.75, 0.0]],
-        ['Pr', 59, [0.75 + Pr1_2_dx, 0.0, 0.5]],
-        ['Pr', 59, [0.25 + Pr1_2_dx, 0.5, 0.5]],
-        ['Pr', 59, [0.25 - Pr1_2_dx, 0.0, 0.5]],
-        ['Pr', 59, [0.75 - Pr1_2_dx, 0.5, 0.5]],
-        ['O', 8, [0.0, 0.875 + O1_1_dy, 0.75 + O1_1_dz]],
-        ['O', 8, [0.5, 0.375 + O1_1_dy, 0.75 + O1_1_dz]],
-        ['O', 8, [0.0, 0.125 - O1_1_dy, 0.75 + O1_1_dz]],
-        ['O', 8, [0.5, 0.625 - O1_1_dy, 0.75 + O1_1_dz]],
-        ['O', 8, [0.0, 0.875 + O1_1_dy, 0.25 - O1_1_dz]],
-        ['O', 8, [0.5, 0.375 + O1_1_dy, 0.25 - O1_1_dz]],
-        ['O', 8, [0.0, 0.125 - O1_1_dy, 0.25 - O1_1_dz]],
-        ['O', 8, [0.5, 0.625 - O1_1_dy, 0.25 - O1_1_dz]],
-        ['O', 8, [0.0, 0.375 + O_1_2_dy, 0.75 + O_1_2_dz]],
-        ['O', 8, [0.5, 0.875 + O_1_2_dy, 0.75 + O_1_2_dz]],
-        ['O', 8, [0.0, 0.625 - O_1_2_dy, 0.75 + O_1_2_dz]],
-        ['O', 8, [0.5, 0.125 - O_1_2_dy, 0.75 + O_1_2_dz]],
-        ['O', 8, [0.0, 0.375 + O_1_2_dy, 0.25 - O_1_2_dz]],
-        ['O', 8, [0.5, 0.875 + O_1_2_dy, 0.25 - O_1_2_dz]],
-        ['O', 8, [0.0, 0.625 - O_1_2_dy, 0.25 - O_1_2_dz]],
-        ['O', 8, [0.5, 0.125 - O_1_2_dy, 0.25 - O_1_2_dz]],
-        ['Ni', 28, [0, 0, 0]],
-        ['Ni', 28, [0.5, 0.5, 0.0]],
-        ['Ni', 28, [0.0, 0.75 + Ni1_2_dy, 0.5]],
-        ['Ni', 28, [0.5, 0.25 + Ni1_2_dy, 0.5]],
-        ['Ni', 28, [0.0, 0.25 - Ni1_2_dy, 0.5]],
-        ['Ni', 28, [0.5, 0.75 - Ni1_2_dy, 0.5]],
-        ['Ni', 28, [0.5, 0.0, 0.0]],
-        ['Ni', 28, [0.0, 0.5, 0.0]]
-    ]
-    return res
 
 
 def get_mode_amplitudes_p63(Pr1_1_dx, Pr1_1_dy, O1_1_dy, O1_1_dz, Ni1_1_dy, Ni1_2_dy):
@@ -238,23 +217,4 @@ def get_mode_amplitudes_p63(Pr1_1_dx, Pr1_1_dy, O1_1_dy, O1_1_dz, Ni1_1_dy, Ni1_
     return res
 
 
-def get_mode_amplitudes_p65(Pr1_2_dx, O1_1_dy, O1_1_dz, O_1_2_dy, O_1_2_dz, Ni1_2_dy):
-    """
-    Function to get the mode amplitudes for the given parameters in the P65 structure.
-    :param Pr1_2_dx: Amplitude of the Pr atom in the x direction
-    :param O1_1_dy: Amplitude of the O1_1 atom in the y direction
-    :param O1_1_dz: Amplitude of the O1_1 atom in the z direction
-    :param O_1_2_dy: Amplitude of the O_1_2 atom in the y direction
-    :param O_1_2_dz: Amplitude of the O_1_2 atom in the z direction
-    :param Ni1_2_dy: Amplitude of the Ni atom in the y direction
-    :return:
-    """
-    res = {
-        "S1(a,0;0,0)[Pr1:d:dsp]A2u(a)": Pr1_2_dx,
-        "S1(a,0;0,0)[O1:f:dsp]B3u(a)": -0.5 * O1_1_dy - 0.5 * O1_1_dz - 0.5 * O_1_2_dy - 0.5 * O_1_2_dz,
-        "S1(a,0;0,0)[O1:f:dsp]B2u(a)": O1_1_dy - O1_1_dz - O_1_2_dy + O_1_2_dz,
-        "M1+(a)[O1:f:dsp]B2u(a)": 0.5 * O1_1_dy + 0.5 * O1_1_dz - 0.5 * O_1_2_dy - 0.5 * O_1_2_dz,
-        "M4+(a)[O1:f:dsp]B3u(a)": -O1_1_dy + O1_1_dz - O_1_2_dy + O_1_2_dz,
-        "S1(a,0;0,0)[Ni1:a:dsp]Eu(a)": - Ni1_2_dy,
-    }
-    return res
+
