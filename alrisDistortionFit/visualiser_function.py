@@ -11,7 +11,7 @@ def transform_list_hkl_p63_p65(hkl_list):
     -9a,c,9b
     """
     # Convert hkl_list to a TensorFlow tensor
-    hkl_list = tf.convert_to_tensor(hkl_list, dtype=tf.float64)
+    hkl_list = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
 
     # Apply the transformation using TensorFlow operations
     h_new = -9 * hkl_list[:, 0]
@@ -54,24 +54,24 @@ def get_atomic_form_factor(qnorm, atom):
     """
     # Define values for Pr, Ni, O atoms as TensorFlow constants
     Pr_vals = {
-        'a': tf.constant([20.9413, 20.0539, 12.4668, 0.296689], dtype=tf.float64),
-        'b': tf.constant([2.54467, 0.202481, 14.8137, 45.4643], dtype=tf.float64),
-        'c': tf.constant(1.24285, dtype=tf.float64),
+        'a': tf.constant([20.9413, 20.0539, 12.4668, 0.296689], dtype=tf.float32),
+        'b': tf.constant([2.54467, 0.202481, 14.8137, 45.4643], dtype=tf.float32),
+        'c': tf.constant(1.24285, dtype=tf.float32),
     }
     Ba_vals = {
-        'a': tf.constant([20.1807, 19.1136, 10.9054, 0.77634], dtype=tf.float64),
-        'b': tf.constant([3.21367, 0.28331, 20.0558, 51.746], dtype=tf.float64),
-        'c': tf.constant(3.02902, dtype=tf.float64),
+        'a': tf.constant([20.1807, 19.1136, 10.9054, 0.77634], dtype=tf.float32),
+        'b': tf.constant([3.21367, 0.28331, 20.0558, 51.746], dtype=tf.float32),
+        'c': tf.constant(3.02902, dtype=tf.float32),
     }
     Cu_vals = {
-        'a': tf.constant([11.8168, 7.11181, 5.78135, 1.14523], dtype=tf.float64),
-        'b': tf.constant([3.37484, 0.244078, 7.9876, 19.897], dtype=tf.float64),
-        'c': tf.constant(1.14431, dtype=tf.float64),
+        'a': tf.constant([11.8168, 7.11181, 5.78135, 1.14523], dtype=tf.float32),
+        'b': tf.constant([3.37484, 0.244078, 7.9876, 19.897], dtype=tf.float32),
+        'c': tf.constant(1.14431, dtype=tf.float32),
     }
     O_vals = {
-        'a': tf.constant([3.7504, 2.84294, 1.54298, 1.652091], dtype=tf.float64),
-        'b': tf.constant([16.5151, 6.59203, 0.319201, 42.3486], dtype=tf.float64),
-        'c': tf.constant(0.24206, dtype=tf.float64),
+        'a': tf.constant([3.7504, 2.84294, 1.54298, 1.652091], dtype=tf.float32),
+        'b': tf.constant([16.5151, 6.59203, 0.319201, 42.3486], dtype=tf.float32),
+        'c': tf.constant(0.24206, dtype=tf.float32),
     }
 
     # Choose atom values based on the input atom
@@ -92,7 +92,7 @@ def get_atomic_form_factor(qnorm, atom):
     b_vals = vals_dict["b"]
 
     # Compute the exponential terms
-    exponential_terms = tf.exp(-b_vals * (qnorm / (4 * tf.constant(np.pi, dtype=tf.float64))) ** 2)
+    exponential_terms = tf.exp(-b_vals * (qnorm / (4 * tf.constant(np.pi, dtype=tf.float32))) ** 2)
     # Multiply the "a" values with the corresponding exponential terms and sum them
     fq += tf.reduce_sum(a_vals * exponential_terms)
 
@@ -117,10 +117,10 @@ def get_structure_factors(hkl_batch, structure):
     """
     # Get atomic types and positions
     atoms = [a for a, _, _ in structure]
-    positions = tf.stack([tf.convert_to_tensor(p, dtype=tf.float64) for _, _, p in structure])  # [A, 3]
+    positions = tf.stack([tf.convert_to_tensor(p, dtype=tf.float32) for _, _, p in structure])  # [A, 3]
 
     # Compute qnorms for each hkl vector (shape [N])
-    qnorms = tf.norm(tf.cast(hkl_batch, tf.float64), axis=1)  # [N]
+    qnorms = tf.norm(tf.cast(hkl_batch, tf.float32), axis=1)  # [N]
     # w = tf.constant(0.01, dtype=tf.float32)  # Debye-Waller factor old is 0.00159
 
     # Get per-atom form factors per hkl
@@ -135,7 +135,7 @@ def get_structure_factors(hkl_batch, structure):
     fq_matrix = tf.stack([fq_table[atom] for atom in atoms], axis=1)  # shape [N, A]
 
     # Compute phase terms: [N, A]
-    phase_arg = tf.tensordot(tf.cast(hkl_batch, tf.float64), tf.transpose(positions), axes=1)  # [N, A]
+    phase_arg = tf.tensordot(tf.cast(hkl_batch, tf.float32), tf.transpose(positions), axes=1)  # [N, A]
     phase = tf.exp(tf.complex(0.0, -2.0 * np.pi) * tf.cast(phase_arg, tf.complex64))  # [N, A]
 
     # Element-wise multiply and sum over atoms
