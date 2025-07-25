@@ -14,9 +14,9 @@ def transform_list_hkl_p63_p65(hkl_list):
     hkl_list = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
 
     # Apply the transformation using TensorFlow operations
-    h_new = -9 * hkl_list[:, 0]
+    h_new = - hkl_list[:, 0] /9
     k_new = hkl_list[:, 2]
-    l_new = 9 * hkl_list[:, 1]
+    l_new = hkl_list[:, 1] / 9
 
     # Stack the new h, k, l components into a single tensor
     result = tf.stack([h_new, k_new, l_new], axis=1)
