@@ -181,7 +181,7 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     # Get atomic types and positions
     atoms = [a for a, _, _ in structure]
     positions = tf.stack([tf.convert_to_tensor(p, dtype=tf.float32) for _, _, p in structure])  # [A, 3]
-    positions = np.array(positions)  # Convert to numpy array for fractional conversion
+    positions = positions.numpy()  # Convert to numpy array for fractional conversion
     positions = fractional_coords(positions)  # Convert to angstrom
 
     # Compute qnorms for each hkl vector (shape [N])
@@ -213,9 +213,9 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     # F_hkl = tf.cast(F_hkl, tf.complex64) * tf.cast(tf.exp(-w * qnorms ** 2), tf.complex64)  # [N]
 
     # # Generate all coordinates (0 to 25 inclusive)
-    x = tf.range(0, 35, dtype=tf.float32)  # Use float32 for scaling
-    y = tf.range(0, 35, dtype=tf.float32)
-    z = tf.range(0, 35, dtype=tf.float32)
+    x = tf.range(0, 1, dtype=tf.float32)  # Use float32 for scaling
+    y = tf.range(0, 1, dtype=tf.float32)
+    z = tf.range(0, 600, dtype=tf.float32)
 
     # Create grid and stack into a tensor of shape [20, 20, 20, 3]
     xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
@@ -700,7 +700,7 @@ def shift_atoms(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a
 
     ]
     
-    print('res is', all(sum(row) == 0 for row in res))
+    ##print('res is', all(sum(row) == 0 for row in res))
 
     return res
 

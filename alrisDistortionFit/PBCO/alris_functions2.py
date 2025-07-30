@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from itertools import product
 
 
 def transform_list_hkl_p63_p65(hkl_list):
@@ -11,17 +12,42 @@ def transform_list_hkl_p63_p65(hkl_list):
     -9a,c,9b
     """
     # Convert hkl_list to a TensorFlow tensor
+    a = 3.82030
+    b = 3.88548
+    c = 11.68350
     hkl_list = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
 
     # Apply the transformation using TensorFlow operations
-    h_new = -9 * hkl_list[:, 0]
-    k_new = hkl_list[:, 2]
-    l_new = 9 *hkl_list[:, 1] 
+    # h_new = -  hkl_list[:, 0] / 9
+    # k_new = hkl_list[:, 2]
+    # l_new = hkl_list[:, 1] / 9
+
+    h_new = hkl_list[:, 0] * 2 * np.pi / a
+    k_new = hkl_list[:, 1] * 2 * np.pi / b
+    l_new = hkl_list[:, 2] * 2 * np.pi / c
+
+    #change to angstrom -1 units
+
 
     # Stack the new h, k, l components into a single tensor
     result = tf.stack([h_new, k_new, l_new], axis=1)
 
     return result
+
+
+def fractional_coords(positions):
+    #convert fractional coords back to cartesian coords, with 81 unit cells
+    a = 3.82030
+    b = 3.88548
+    c = 11.68350
+
+    x_new = 9 * a * positions[:, 0] 
+    y_new = 9 * b * positions[:, 1]
+    z_new = c * positions[:, 2]
+
+    fractional_positions = tf.stack([x_new, y_new, z_new], axis=1)
+
+    return fractional_positions
 
 
 def get_atomic_form_factor(qnorm, atom):
@@ -40,6 +66,8 @@ def get_atomic_form_factor(qnorm, atom):
     Ba: 2+
     Cu: 2+
     O: 2+
+
+    this one is used
 
     value of O is used becuase there is no O2-
 
@@ -70,9 +98,36 @@ def get_atomic_form_factor(qnorm, atom):
     }
     O_vals = {
         'a': tf.constant([3.7504, 2.84294, 1.54298, 1.652091], dtype=tf.float32),
-        'b': tf.constant([16.5151, 6.59203, 0.319201, 42.3486], dtype=tf.float32),
+        'b': tf.constant([16.5151, 6.59203, 0.319201, 43.3486], dtype=tf.float32),
         'c': tf.constant(0.24206, dtype=tf.float32),
     }
+    #Pr , Ba , Cu , O atom val used here
+    # Pr_vals = {
+    #     'a': tf.constant([22.044, 19.6697, 12.3856, 2.82428], dtype=tf.float32),
+    #     'b': tf.constant([2.77393, 0.222087, 16.7669, 143.644], dtype=tf.float32),
+    #     'c': tf.constant(2.0583, dtype=tf.float32),
+    # }
+    # Ba_vals = {
+    #     'a': tf.constant([20.3361, 19.297, 10.888, 2.6959], dtype=tf.float32),
+    #     'b': tf.constant([3.216, 0.2756, 20.2073, 167.202], dtype=tf.float32),
+    #     'c': tf.constant(2.7731, dtype=tf.float32),
+    # }
+    # Cu_vals = {
+    #     'a': tf.constant([13.338, 7.1676, 5.6158, 1.6735], dtype=tf.float32),
+    #     'b': tf.constant([3.5828, 0.247, 11.3966, 64.8126], dtype=tf.float32),
+    #     'c': tf.constant(1.191, dtype=tf.float32),
+    # }
+    # O_vals = {
+    #     'a': tf.constant([3.0485, 2.2868, 1.5463, 0.867], dtype=tf.float32),
+    #     'b': tf.constant([13.2771, 5.7011, 0.3239, 32.9089], dtype=tf.float32),
+    #     'c': tf.constant(0.2508, dtype=tf.float32),
+    # } 
+    #O1- used here
+    # O_vals = {
+    #     'a': tf.constant([4.1916, 1.63969, 1.52673, -20.307], dtype=tf.float32),
+    #     'b': tf.constant([12.8573, 4.17236, 47.0179, -0.01404], dtype=tf.float32),
+    #     'c': tf.constant(21.9412, dtype=tf.float32),
+    # }
 
     # Choose atom values based on the input atom
     if atom == "Pr":
@@ -92,14 +147,17 @@ def get_atomic_form_factor(qnorm, atom):
     b_vals = vals_dict["b"]
 
     # Compute the exponential terms
-    exponential_terms = tf.exp(-b_vals * (qnorm / (4 * tf.constant(np.pi))) ** 2)
+    #exponential_terms = tf.exp(-b_vals * (qnorm **2 / 4))
+    exponential_terms = tf.exp(-b_vals * (qnorm / (4 * tf.constant(np.pi, dtype=tf.float32))) ** 2)
+
     # Multiply the "a" values with the corresponding exponential terms and sum them
     fq += tf.reduce_sum(a_vals * exponential_terms)
 
     return fq
 
 
-def get_structure_factors(hkl_batch, structure , hkl_parent):
+
+def get_structure_factors(hkl_batch, structure, parent_hkl):
     """
     Vectorized structure factor calculation.
 
@@ -114,12 +172,22 @@ def get_structure_factors(hkl_batch, structure , hkl_parent):
     -------
     Tensor [N] (complex64)
         Structure factors for each hkl
+
+    https://advanced.onlinelibrary.wiley.com/doi/10.1002/aenm.202300760
+
     """
+
+    parent_hkl= tf.convert_to_tensor(hkl_batch, dtype=tf.float32)
     # Get atomic types and positions
     atoms = [a for a, _, _ in structure]
     positions = tf.stack([tf.convert_to_tensor(p, dtype=tf.float32) for _, _, p in structure])  # [A, 3]
+    #positions = positions.numpy()  # Convert to numpy array for fractional conversion
+    positions = fractional_coords(positions)  # Convert to angstrom
 
     # Compute qnorms for each hkl vector (shape [N])
+    #qnorms = tf.norm(tf.cast(hkl_batch, tf.float32), axis=1)  # [N]
+    #q_norm_max = tf.reduce_max(qnorms)  # Get the maximum qnorm value
+
     qnorms = tf.norm(tf.cast(hkl_batch, tf.float32), axis=1)  # [N]
     # w = tf.constant(0.01, dtype=tf.float32)  # Debye-Waller factor old is 0.00159
 
@@ -136,12 +204,45 @@ def get_structure_factors(hkl_batch, structure , hkl_parent):
 
     # Compute phase terms: [N, A]
     phase_arg = tf.tensordot(tf.cast(hkl_batch, tf.float32), tf.transpose(positions), axes=1)  # [N, A]
-    phase = tf.exp(tf.complex(0.0, -2.0 * np.pi) * tf.cast(phase_arg, tf.complex64))  # [N, A]
+    phase_arg = tf.cast(phase_arg, tf.float32)  # Ensure float32 type for complex conversion
+    phase = tf.exp(tf.complex(0.0,phase_arg))  # [N, A]
 
     # Element-wise multiply and sum over atoms
     F_hkl = tf.reduce_sum(fq_matrix * phase, axis=1)  # [N]
     # Apply Debye-Waller factor
     # F_hkl = tf.cast(F_hkl, tf.complex64) * tf.cast(tf.exp(-w * qnorms ** 2), tf.complex64)  # [N]
+
+    # # Generate all coordinates (0 to 25 inclusive)
+    x = tf.range(0, 1, dtype=tf.float32)  # Use float32 for scaling
+    y = tf.range(0, 1, dtype=tf.float32)
+    z = tf.range(0, 600, dtype=tf.float32)
+
+    # Create grid and stack into a tensor of shape [20, 20, 20, 3]
+    xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
+    coordinates = tf.stack([xx, yy, zz], axis=-1)
+    coordinates = tf.reshape(coordinates, (-1, 3))
+
+    a = 3.82030 
+    b = 3.88548
+    c = 11.68350
+
+
+    unit_cell_lengths = tf.constant([a, b, c], dtype=tf.float32)
+
+    scaled_coordinates = coordinates * unit_cell_lengths  # Scale coordinates by unit cell lengths
+    scaled_coordinates = tf.transpose(scaled_coordinates)  # Transpose to match hkl dimensions
+
+    fourier_exp = tf.exp(tf.complex(0.0,tf.tensordot(hkl_batch, scaled_coordinates, axes=1)))
+    sum_fourier_exp = tf.reduce_sum(fourier_exp, axis=1) 
+    F_hkl = F_hkl * sum_fourier_exp
+
+    print('F_hkl:', F_hkl)
+
+
+
+
+
+
     return F_hkl
 
 
@@ -599,6 +700,7 @@ def shift_atoms(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a
 
     ]
     
+    ##print('res is', all(sum(row) == 0 for row in res))
 
     return res
 
@@ -1662,5 +1764,10 @@ def atom_position_list(Pr1_1_Dx, Pr1_1_Dz, Pr1_2_Dx, Pr1_2_Dz, Pr1_3_Dx, Pr1_3_D
 
     ]
 
+    # swap the element in res[:, 2, 1] and res[:, 2, 2]
+    # res is a list of lists
+    for i in range(len(res)):
+        res[i][2][1], res[i][2][2] = res[i][2][2], res[i][2][1]
 
     return res
+
