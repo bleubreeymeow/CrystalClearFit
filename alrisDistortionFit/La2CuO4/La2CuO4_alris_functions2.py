@@ -110,12 +110,40 @@ def get_structure_factors(hkl_batch, structure):
 
     # Compute phase terms: [N, A]
     phase_arg = tf.tensordot(tf.cast(hkl_batch, tf.float32), tf.transpose(positions), axes=1)  # [N, A]
-    phase = tf.exp(tf.complex(0.0, -2.0 * np.pi) * tf.cast(phase_arg, tf.complex64))  # [N, A]
+    phase = tf.exp(tf.complex(0.0, 2.0 * np.pi) * tf.cast(phase_arg, tf.complex64))  # [N, A]
 
     # Element-wise multiply and sum over atoms
     F_hkl = tf.reduce_sum(fq_matrix * phase, axis=1)  # [N]
     # Apply Debye-Waller factor
     # F_hkl = tf.cast(F_hkl, tf.complex64) * tf.cast(tf.exp(-w * qnorms ** 2), tf.complex64)  # [N]
+
+    
+    # Generate all coordinates (0 to 100 inclusive)
+    x = tf.range(0, 25, dtype=tf.float32)  # Use float32 for scaling
+    y = tf.range(0, 25, dtype=tf.float32)
+    z = tf.range(0, 25, dtype=tf.float32)
+
+    # Create grid and stack into a tensor of shape [20, 20, 20, 3]
+    xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
+    coordinates = tf.stack([xx, yy, zz], axis=-1)
+    coordinates = tf.reshape(coordinates, (-1, 3))
+
+    # a = 3.82030 
+    # b = 3.88548
+    # c = 11.68350
+
+    a = 1
+    b = 1
+    c = 1
+
+    unit_cell_lengths = tf.constant([a, b, c], dtype=tf.float32)
+
+    scaled_coordinates = coordinates * unit_cell_lengths  # Scale coordinates by unit cell lengths
+    scaled_coordinates = tf.transpose(scaled_coordinates)  # Transpose to match hkl dimensions
+    fourier_exp = tf.exp(tf.complex(0.0, 2* np.pi* tf.tensordot(hkl_batch, scaled_coordinates, axes=1)))
+    sum_fourier_exp = tf.reduce_sum(fourier_exp, axis=1) 
+    F_hkl = F_hkl * sum_fourier_exp
+    
     return F_hkl
 
 def shift_atoms(a17,a18,a19,a20,a51,a52,a53,a54,a76,a77,a78,a115,a116,a117,a118,a119,a120,a148,a149,a150):
