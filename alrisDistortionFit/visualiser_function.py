@@ -213,31 +213,28 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     # F_hkl = tf.cast(F_hkl, tf.complex64) * tf.cast(tf.exp(-w * qnorms ** 2), tf.complex64)  # [N]
 
     # # Generate all coordinates (0 to 25 inclusive)
-    # x = tf.range(0, 35, dtype=tf.float32)  # Use float32 for scaling
-    # y = tf.range(0, 35, dtype=tf.float32)
-    # z = tf.range(0, 35, dtype=tf.float32)
+    x = tf.range(0, 35, dtype=tf.float32)  # Use float32 for scaling
+    y = tf.range(0, 35, dtype=tf.float32)
+    z = tf.range(0, 35, dtype=tf.float32)
 
-    # # Create grid and stack into a tensor of shape [20, 20, 20, 3]
-    # xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
-    # coordinates = tf.stack([xx, yy, zz], axis=-1)
-    # coordinates = tf.reshape(coordinates, (-1, 3))
+    # Create grid and stack into a tensor of shape [20, 20, 20, 3]
+    xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
+    coordinates = tf.stack([xx, yy, zz], axis=-1)
+    coordinates = tf.reshape(coordinates, (-1, 3))
 
-    # # a = 3.82030 
-    # # b = 3.88548
-    # # c = 11.68350
+    a = 3.82030 
+    b = 3.88548
+    c = 11.68350
 
-    # a = 1
-    # b = 1
-    # c = 1
 
-    # unit_cell_lengths = tf.constant([a, b, c], dtype=tf.float32)
+    unit_cell_lengths = tf.constant([a, b, c], dtype=tf.float32)
 
-    # scaled_coordinates = coordinates * unit_cell_lengths  # Scale coordinates by unit cell lengths
-    # scaled_coordinates = tf.transpose(scaled_coordinates)  # Transpose to match hkl dimensions
+    scaled_coordinates = coordinates * unit_cell_lengths  # Scale coordinates by unit cell lengths
+    scaled_coordinates = tf.transpose(scaled_coordinates)  # Transpose to match hkl dimensions
 
-    # fourier_exp = tf.exp(tf.complex(0.0, 2* np.pi* tf.tensordot(parent_hkl, scaled_coordinates, axes=1)))
-    # sum_fourier_exp = tf.reduce_sum(fourier_exp, axis=1) 
-    # F_hkl = sum_fourier_exp
+    fourier_exp = tf.exp(tf.complex(0.0,tf.tensordot(hkl_batch, scaled_coordinates, axes=1)))
+    sum_fourier_exp = tf.reduce_sum(fourier_exp, axis=1) 
+    F_hkl = F_hkl * sum_fourier_exp
 
     print('F_hkl:', F_hkl)
 
