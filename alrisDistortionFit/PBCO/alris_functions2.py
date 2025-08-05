@@ -700,7 +700,6 @@ def shift_atoms(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a
 
     ]
     
-    ##print('res is', all(sum(row) == 0 for row in res))
 
     return res
 
@@ -1764,6 +1763,7 @@ def atom_position_list(Pr1_1_Dx, Pr1_1_Dz, Pr1_2_Dx, Pr1_2_Dz, Pr1_3_Dx, Pr1_3_D
 
     ]
 
+    #swap the y and the z coordinates because this transformation was done in isodisort
     # swap the element in res[:, 2, 1] and res[:, 2, 2]
     # res is a list of lists
     for i in range(len(res)):
