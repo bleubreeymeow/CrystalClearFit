@@ -129,7 +129,7 @@ def get_atomic_form_factor(qnorm, atom):
 
 
 
-def get_structure_factors(hkl_batch, structure, parent_hkl):
+def get_structure_factors(hkl_batch, structure):
     """
     Vectorized structure factor calculation.
 
@@ -149,7 +149,6 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
 
     """
 
-    parent_hkl= tf.convert_to_tensor(hkl_batch, dtype=tf.float32)
     # Get atomic types and positions
     atoms = [a for a, _, _ in structure]
     positions = tf.stack([tf.convert_to_tensor(p, dtype=tf.float32) for _, _, p in structure])  # [A, 3]
@@ -204,136 +203,11 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     sum_fourier_exp = tf.reduce_sum(fourier_exp, axis=1) 
     F_hkl = F_hkl * sum_fourier_exp
 
-    print('F_hkl:', F_hkl)
-
     return F_hkl
 
 def shift_atoms(matrix , a):    
-    a_2d = tf.reshape(a , [-1 , 1])
-    print(a_2d.shape)
-    res = matrix @ a_2d
-    
-    ##print('res is', all(sum(row) == 0 for row in res))
-    #print shape of the tensor
-    print(res.shape)
-    result = res
-    print(type(result))
-    tensor_result = result
+    return matrix @ tf.reshape(a , [-1 , 1])
 
-    #tensor_result = tf.convert_to_tensor(result.numpy())
-    print(tensor_result.shape)
-    return tensor_result
-
-
-    
-def build_spec_from_source(src: str):
-    # Extract the 'res = [...]' block
-    i = src.find("res =")
-    j = src.find("[", i)
-    depth = 0
-    k = j
-    while k < len(src):
-        if src[k] == "[": depth += 1
-        elif src[k] == "]": 
-            depth -= 1
-            if depth == 0: break
-        k += 1
-    block = src[j:k+1]
-
-    # Find all parameter names
-    var_pat = re.compile(r"\b([A-Z][a-z]?\d+_\d+_d[xyz])\b")
-    var_names = sorted(set(var_pat.findall(block)))
-
-    # Symbolic parsing classes
-    class Sum:
-        def __init__(self, base, tag): 
-            self.base = float(base)
-            self.tag = tag
-        def __add__(self, other):
-            if isinstance(other, (int, float)): 
-                return Sum(self.base + float(other), self.tag)
-            raise TypeError("Only number + Sum supported")
-        __radd__ = __add__
-
-    class Var:
-        def __init__(self, name): self.name = name
-        def __add__(self, other):
-            if isinstance(other, (int, float)): 
-                return Sum(float(other), self.name)
-            if isinstance(other, Sum): 
-                return Sum(other.base, self.name)
-            raise TypeError("Var + ?")
-        __radd__ = __add__
-
-    env = {name: Var(name) for name in var_names}
-    res = eval(block, {}, env)
-
-    # Convert to TensorFlow tensors
-    elements, Zs, base, tags = [], [], [], []
-    for el, z, coord in res:
-        elements.append(el)
-        Zs.append(z)
-        bx, by, bz = coord
-        
-        def split(v):
-            if isinstance(v, (int, float)): return float(v), ""
-            if isinstance(v, Sum): return v.base, v.tag
-            raise TypeError(f"Unexpected type {type(v)}")
-        
-        (cx, tx), (cy, ty), (cz, tz) = split(bx), split(by), split(bz)
-        base.append([cx, cy, cz])
-        tags.append([tx, ty, tz])
-
-    # Convert to TF tensors (preserving string types)
-    ELEMENT = tf.constant(elements, dtype=tf.string)
-    Z = tf.constant(Zs, dtype=tf.string)
-    BASE = tf.constant(base, dtype=tf.float32)
-    TAGS = tf.constant(tags, dtype=tf.string)  # Tags as strings
-    
-    # Create parameter index mapping
-    param_to_idx = {name: i for i, name in enumerate(var_names)}
-    
-    return ELEMENT, Z, BASE, TAGS, param_to_idx
-
-def make_atom_position_fn_from_source(src: str):
-    ELEMENT, Z, BASE, TAGS, param_to_idx = build_spec_from_source(src)
-    num_params = len(param_to_idx)
-    
-    @tf.function
-    def atom_pos(params):
-        # params: Tensor of shape [num_params] (must match param_to_idx order)
-        
-        # Create delta tensor by scattering params
-        delta_indices = []
-        delta_values = []
-        
-        # Precompute where to apply each parameter
-        for i in tf.range(tf.shape(TAGS)[0]):
-            for a in tf.range(3):
-                tag = TAGS[i, a]
-                if tag != "":  # Empty string means no parameter
-                    param_idx = param_to_idx[tf.compat.as_str_any(tag)]
-                    delta_indices.append([i, a])
-                    delta_values.append(params[param_idx])
-        
-        # Build sparse delta matrix
-        if delta_indices:
-            delta_indices = tf.convert_to_tensor(delta_indices)
-            delta_values = tf.convert_to_tensor(delta_values)
-            deltas = tf.scatter_nd(delta_indices, delta_values, tf.shape(BASE))
-        else:
-            deltas = tf.zeros_like(BASE)
-        
-        coords = BASE + deltas
-        
-        # Return in original format: [element, Z, [x,y,z]]
-        return tf.stack([
-            ELEMENT,
-            Z,
-            tf.map_fn(lambda x: tf.stack([x[0], x[1], x[2]]), coords)
-        ], axis=1)
-    
-    return atom_pos
 
 
 
