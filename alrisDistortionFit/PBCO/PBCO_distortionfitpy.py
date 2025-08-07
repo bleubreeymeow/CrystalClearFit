@@ -1,36 +1,47 @@
+import os
+os.environ['PYTHONHASHSEED'] = '1'  # Set a fixed seed for reproducibility
+
+# os.environ['TF_NUM_INTRAOP_THREADS'] = '1'  # For within-op parallelism
+# os.environ['TF_NUM_INTEROP_THREADS'] = '1'  # For between-op parallelism
+
 import numpy as np
-import re
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import pandas as pd
-from importlib import reload
-import alris_functions2
-reload(alris_functions2)
 from alris_functions2 import shift_atoms, transform_list_hkl_p63_p65, get_structure_factors , atom_position_list
-from itertools import chain
-from matplotlib.markers import MarkerStyle
 import multiprocessing as mp
+from time import time
+from datetime import datetime
+
+num_threads = 1 
+
+# Configure TensorFlow to use multiple threads
+tf.config.threading.set_intra_op_parallelism_threads(num_threads)
+tf.config.threading.set_inter_op_parallelism_threads(num_threads)
+
 
 global features ,labels , labels_err, matrix , max_mode_amps
 
-def init_worker():
-
-    seed = 1
-
-
+def init_worker(seed, _features, _labels, _labels_err, _matrix, _max_mode_amps):
+    global features, labels, labels_err, matrix, max_mode_amps
+    features = _features
+    labels = _labels
+    labels_err = _labels_err
+    matrix = _matrix
+    max_mode_amps = _max_mode_amps
 
     # Create separate seed
     worker_id = mp.current_process()._identity[0] if mp.current_process()._identity else 0
     worker_seed = seed + worker_id
     tf.keras.utils.set_random_seed(seed=worker_seed)
 
+    print(f"worker {worker_id} initialised")
 
-def ran_iteration(iteration):
+
+
+def run_iteration(iteration):
     global features, labels, labels_err, matrix, max_mode_amps
     n_dim = 3
     lr = 5e-1
-    max_mode_amps = tf.constant([5.6,6.36,5.6,11.19,11.19,12.73,11.19,12.73,11.19,11.19,12.73,11.19,9.0,7.91,9.0,7.91,9.0,9.0,9.0,7.91,7.91,9.0,7.91,9.0,9.0,9.0,7.91,9.0,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,9.0,7.91,9.0,7.91,9.0,9.0,9.0,7.91,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,6.36,6.36,5.6,6.36,6.36,5.6,6.36,6.36,6.36,6.36,6.36,5.6,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,8.29,7.91,8.04,8.42,8.04,8.42,0.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,15.59,18.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,11.73,11.19,11.37,11.91,11.73,11.19,11.37,11.91,11.02,12.73,14.7,12.73,11.73,11.19,11.37,11.91,11.73,11.19,11.37,11.91,11.73,11.19,11.37,11.91,11.02,12.73,14.7,12.73,11.73,11.19,11.37,11.91,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,12.73,11.02,11.19,12.73,11.02,12.73,12.73,11.02,11.19,12.73,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,7.79,9.0,9.14,7.91,9.14,7.91,8.29,7.91,9.14,9.58,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,9.14,7.91,9.14,7.91,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,9.14,9.58,8.04,8.42,7.79,9.0,9.14,7.91,9.14,7.91,8.29,7.91,8.04,8.42,9.14,9.58,8.29,7.91,8.04,8.42,9.14,9.58,7.79,9.0,10.39,9.0,10.39,9.0,8.29,7.91,8.04,8.42,9.14,9.58,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,9.14,7.91,9.14,7.91,8.29,7.91,9.14,9.58,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,5.6,6.36,5.6,11.19,11.19,12.73,11.19,12.73,11.19,11.19,12.73,11.19,9.0,7.91,9.0,7.91,9.0,9.0,9.0,7.91,7.91,9.0,7.91,9.0,9.0,9.0,7.91,9.0,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,9.0,7.91,9.0,7.91,9.0,9.0,9.0,7.91,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,6.36,6.36,5.6,6.36,6.36,5.6,6.36,6.36,6.36,6.36,6.36,5.6,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,7.79,9.0,9.14,7.91,9.14,7.91,0.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,15.59,18.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,14.7,12.73,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,14.7,12.73,11.02,12.73,12.92,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,12.73,11.02,11.19,12.73,11.02,12.73,12.73,11.02,11.19,12.73,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,10.39,9.0,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,10.39,9.0,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,10.39,9.0,10.39,9.0,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,10.39,9.0,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,5.6,6.36,5.6,11.19,11.19,12.73,11.19,12.73,11.19,11.19,12.73,11.19,9.0,7.91,9.0,7.91,9.0,9.0,9.0,7.91,7.91,9.0,7.91,9.0,9.0,9.0,7.91,9.0,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,9.0,7.91,9.0,7.91,9.0,9.0,9.0,7.91,7.91,7.91,7.91,7.91,7.91,9.0,7.91,7.91,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,6.36,6.36,5.6,6.36,6.36,5.6,6.36,6.36,6.36,6.36,6.36,5.6,5.6,6.36,5.6,5.6,6.36,5.6,5.6,6.36,6.36,5.6,6.36,5.6,8.29,7.91,8.04,8.42,8.04,8.42,0.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,15.59,18.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,14.7,12.73,11.02,12.73,12.92,11.19,11.73,11.19,11.37,11.91,11.73,11.19,11.37,11.91,11.02,12.73,14.7,12.73,11.73,11.19,11.37,11.91,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,12.73,11.02,11.19,12.73,11.02,12.73,12.73,11.02,11.19,12.73,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,9.14,9.58,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,9.14,9.58,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,10.39,9.0,10.39,9.0,7.79,9.0,9.14,7.91,10.39,9.0,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,9.14,9.58,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,0.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,15.59,18.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,11.73,11.19,11.37,11.91,11.73,11.19,11.37,11.91,11.02,12.73,14.7,12.73,11.73,11.19,11.37,11.91,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,14.7,12.73,11.02,12.73,12.92,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,12.73,11.02,11.19,12.73,11.02,12.73,12.73,11.02,11.19,12.73,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,10.39,9.0,9.14,7.91,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,10.39,9.0,9.14,7.91,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,9.14,9.58,8.29,7.91,8.04,8.42,9.14,9.58,7.79,9.0,10.39,9.0,10.39,9.0,8.29,7.91,8.04,8.42,9.14,9.58,8.29,7.91,8.04,8.42,8.04,8.42,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,10.39,9.0,9.14,7.91,8.29,7.91,8.04,8.42,8.04,8.42,7.79,9.0,9.14,7.91,9.14,7.91,0.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,15.59,18.0,15.59,15.83,15.59,15.83,15.59,18.0,15.59,15.83,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,14.7,12.73,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,12.92,11.19,11.02,12.73,14.7,12.73,11.02,12.73,12.92,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,11.02,11.19,12.73,11.02,11.19,12.73,11.02,12.73,12.73,11.02,11.19,12.73,11.02,11.19,11.19,11.02,11.19,11.19,11.02,12.73,11.19,11.02,11.19,11.19,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,10.39,9.0,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,10.39,9.0,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,10.39,9.0,10.39,9.0,7.79,9.0,9.14,7.91,10.39,9.0,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91,7.79,9.0,10.39,9.0,9.14,7.91,7.79,9.0,9.14,7.91,9.14,7.91])
-
     optim = tf.keras.optimizers.Adam(learning_rate=lr)
     n_epochs = 100
 
@@ -49,12 +60,14 @@ def ran_iteration(iteration):
         run_eagerly=False,  # Set to True for debugging, False for performance
     )
 
+    #print("fitting started for iteration", iteration)
+
     history = model.fit(
         x=features,
         y=labels,  # replace with combined_labels if using errors
         batch_size = features.shape[0], # Use a smaller batch size features.shape[0]
         epochs=n_epochs,
-        verbose='auto',
+        verbose=0,
         shuffle=True, # not sure whether this matters
         # callbacks=[cb]
         sample_weight=labels_err  # Use sample weights if you have errors
@@ -63,7 +76,12 @@ def ran_iteration(iteration):
     final_loss = history.history['loss'][-1]
     best_model_pars = max_mode_amps * tf.tanh(model.layers[-1].get_weights()[0])
 
-    return best_model_pars, final_loss
+    #print(f"Iteration {iteration}/{100}, Final Loss: {final_loss:.4f}")
+
+    return best_model_pars, final_loss , iteration
+
+
+
 
 
 
@@ -102,7 +120,7 @@ class FunAsLayer(tf.keras.layers.Layer):
         self.matrix = matrix
 
     def build(self, input_shape):
-        self.param = self.add_weight(name='param', shape=(1290,), initializer=tf.keras.initializers.GlorotNormal(seed=1), trainable=True)
+        self.param = self.add_weight(name='param', shape=(1290,), initializer=tf.keras.initializers.GlorotNormal(), trainable=True)
         super().build(input_shape)
 
     def call(self, inputs):
@@ -158,114 +176,66 @@ def make_sample_weights(experimental_data):
 
     return labels, labels_err
 
-def fn_distortion_fitting(labels , labels_err , matrix , features , n_dim , iteration_num):
-    #initialise the histogram matrix
-    histogram_matrix = tf.zeros([iteration_num , iteration_num], dtype=tf.float32)
-    
-    lr = [5e-1]
-    best_pars_overall = None
-    best_rf_overall = np.inf
-    best_loss_overall = []
-
-    for learning_rate in lr:
-
-        optim = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        n_epochs = 100
-        histories = []
-        n_iter = iteration_num
-
-        min_loss = np.inf
-        best_pars = None
-
-        # List to store the loss values for each epoch
-        all_losses = []
-
-
-        for i in range(n_iter):
-            # Create the model
-            inputs = tf.keras.Input(shape=(n_dim,))
-            outputs = FunAsLayer(matrix , max_mode_amps)(inputs)
-            model = tf.keras.Model(inputs, outputs)
-
-
-            # Compile the model with the custom loss function and metric
-            model.compile(
-                optimizer=optim,
-                loss= 'mse', # MSE_weighted() if using errors
-                metrics=[r_factor_metric],
-                run_eagerly=False,  # Set to True for debugging, False for performance
-
-            )
-            
-            history = model.fit(
-            x=features,
-            y=labels,  # replace with combined_labels if using errors
-            batch_size = features.shape[0], # Use a smaller batch size features.shape[0]
-            epochs=n_epochs,
-            verbose='auto',
-            shuffle=True, # not sure whether this matters
-            # callbacks=[cb]
-            sample_weight=labels_err  # Use sample weights if you have errors
-            )
-
-            histories.append(history)
-            all_losses.append(history.history['loss'])
-            # Check final loss
-            final_loss = history.history['loss'][-1]
-            print(model.layers[-1].get_weights()[0].shape)
-            curren_model_pars = max_mode_amps * tf.tanh(model.layers[-1].get_weights()[0])
-            print(f"Final loss: {final_loss:.3e}")
-            '''
-            print(f"Best parameters for iteration {i+1}:")
-            for j, par in enumerate(curren_model_pars):
-                print(f"Parameter {j+1}: {par.numpy():.4f}")
-            '''
-            #open the file and write the parameters
-
-
-            if final_loss < min_loss:
-                # Update best model parameters
-                best_model_pars = max_mode_amps * tf.tanh(model.layers[-1].get_weights()[0])
-                min_loss = final_loss
-                rf = r_factor_metric(labels, fun_tf(features, best_model_pars , matrix))
-                print(f"Iteration {i+1} - New best loss: {min_loss:.3e} (R-factor: {rf:.3e})")
-
-        if min_loss < best_rf_overall:
-            best_rf_overall = min_loss
-            best_pars_overall = best_model_pars
-            best_loss_overall = all_losses
-
-        # Plotting the loss values
-        plt.figure(figsize=(10, 6))
-
-        # Plot the loss values for each iteration
-        for i, loss_values in enumerate(all_losses):
-            plt.plot(loss_values, label=f'Iteration {i+1}')
-
-
-        return histogram_matrix
-
-
 
 
 if __name__ == "__main__":
+    t0 = time()
     # Load experimental data
-    experimental_data = pd.read_csv('C:/Users/User/Desktop/uzh_intern/CrystalClearFit/alrisDistortionFit/PBCO/raw_data/combined_peaks.csv')
-    matrix = np.loadtxt('C:/Users/User/Desktop/uzh_intern/CrystalClearFit/alrisDistortionFit/PBCO/new_PBCO_fit/matrix.txt', dtype=np.float32)
+    # experimental_data = pd.read_csv('alrisDistortionFit/PBCO/raw_data/combined_peaks.csv')
+    # matrix = np.loadtxt('alrisDistortionFit/PBCO/matrix.txt', dtype=np.float32)
+    # max_mode_amps = np.loadtxt('alrisDistortionFit/PBCO/new_PBCO_fit/new_PBCO_max_bound_vectors.txt', dtype=np.float32 , delimiter=',')
 
+    experimental_data = pd.read_csv('combined_peaks.csv')
+    matrix = np.loadtxt('matrix.txt', dtype=np.float32)
+    max_mode_amps = np.loadtxt('new_PBCO_max_bound_vectors.txt', dtype=np.float32 , delimiter=',')
+
+    number_of_modes = 1290
     n_features = experimental_data.shape[0]
     n_dim = 3
-
+    iteration_num = 100
+    seed = 1
     hkl_list = experimental_data[["h", "k", "l"]].values.tolist()
-    hkl_list = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
 
+    features = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
     matrix = tf.convert_to_tensor(matrix, dtype=tf.float32)
+    max_mode_amps = tf.convert_to_tensor(max_mode_amps, dtype=tf.float32)
 
     labels, labels_err = make_sample_weights(experimental_data)
 
-    histogram_matrix = fn_distortion_fitting(labels, labels_err, matrix, hkl_list, n_dim, iteration_num=1000)
+    # Instantiate multiprocessing pool
 
+    mp.set_start_method('spawn', force=True)  # Use 'spawn' to avoid issues with TensorFlow and multiprocessing
 
+    pool = mp.Pool(
+        processes=4,
+        initializer=init_worker,
+        initargs=(seed,features, labels, labels_err, matrix, max_mode_amps)
+    )
+    #spawn n processes
 
+    # Start the evaluation
+    results = []
+    progress_interval = max(1, iteration_num // 10)
+    for idx, result in enumerate(pool.imap_unordered(run_iteration, range(iteration_num), 1)):
+        results.append(result)
+        if idx % progress_interval == 0 or idx == iteration_num -1:
+            print(f"Progress: {(idx/iteration_num*100):.0f}% completed.")
+    
+    # Close the pool
+    pool.close()
+    pool.join()
+
+    histogram_matrix = np.zeros((number_of_modes, iteration_num), dtype=np.float32)
+    loss_matrix = np.zeros((iteration_num,), dtype=np.float32)
+
+    for i, res in enumerate(results):
+        histogram_matrix[: , i] = res[0]
+        loss_matrix[i] = res[1]
+   
+    savedir = f'results/{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    os.makedirs(savedir, exist_ok=True)  # Ensure the directory exists
+    np.savez(os.path.join(savedir, 'all_result_matrix.npz'), histogram_matrix=histogram_matrix , loss_matrix=loss_matrix)
+
+    print(f"Total time taken: {time() - t0:.2f} seconds")
 
 
