@@ -19,15 +19,17 @@ tf.config.threading.set_intra_op_parallelism_threads(num_threads)
 tf.config.threading.set_inter_op_parallelism_threads(num_threads)
 
 
-global features ,labels , labels_err, matrix , max_mode_amps
+global features ,labels , labels_err, matrix , max_mode_amps , epochs , lr
 
-def init_worker(seed, _features, _labels, _labels_err, _matrix, _max_mode_amps):
-    global features, labels, labels_err, matrix, max_mode_amps
+def init_worker(seed, _features, _labels, _labels_err, _matrix, _max_mode_amps , _epochs , _lr):
+    global features, labels, labels_err, matrix, max_mode_amps, epochs, lr
     features = _features
     labels = _labels
     labels_err = _labels_err
     matrix = _matrix
     max_mode_amps = _max_mode_amps
+    epochs = _epochs
+    lr = _lr
 
     # Create separate seed
     worker_id = mp.current_process()._identity[0] if mp.current_process()._identity else 0
@@ -39,18 +41,16 @@ def init_worker(seed, _features, _labels, _labels_err, _matrix, _max_mode_amps):
 
 
 def run_iteration(iteration):
-    global features, labels, labels_err, matrix, max_mode_amps
+    global features, labels, labels_err, matrix, max_mode_amps , epochs , lr
     n_dim = 3
-    lr = 5e-1
-    optim = tf.keras.optimizers.Adam(learning_rate=lr)
-    n_epochs = 100
 
+    optim = tf.keras.optimizers.Adam(learning_rate=lr)
+    n_epochs = epochs
 
  # Create the model
     inputs = tf.keras.Input(shape=(n_dim,))
     outputs = FunAsLayer(matrix , max_mode_amps)(inputs)
     model = tf.keras.Model(inputs, outputs)
-
 
     # Compile the model with the custom loss function and metric
     model.compile(
@@ -60,7 +60,6 @@ def run_iteration(iteration):
         run_eagerly=False,  # Set to True for debugging, False for performance
     )
 
-    #print("fitting started for iteration", iteration)
 
     history = model.fit(
         x=features,
@@ -76,16 +75,7 @@ def run_iteration(iteration):
     final_loss = history.history['loss'][-1]
     best_model_pars = max_mode_amps * tf.tanh(model.layers[-1].get_weights()[0])
 
-    #print(f"Iteration {iteration}/{100}, Final Loss: {final_loss:.4f}")
-
-    return best_model_pars, final_loss , iteration
-
-
-
-
-
-
-
+    return best_model_pars, final_loss , iteration , history.history['loss'] , r_factor_metric(labels, model.predict(features))
 
 def fun_tf(hkl_list, pars, matrix):
     """
@@ -120,7 +110,7 @@ class FunAsLayer(tf.keras.layers.Layer):
         self.matrix = matrix
 
     def build(self, input_shape):
-        self.param = self.add_weight(name='param', shape=(1290,), initializer=tf.keras.initializers.GlorotNormal(), trainable=True)
+        self.param = self.add_weight(name='param', shape=(1290,), initializer=tf.keras.initializers.RandomNormal(mean=0.,stddev=0.1), trainable=True)
         super().build(input_shape)
 
     def call(self, inputs):
@@ -164,9 +154,9 @@ def make_sample_weights(experimental_data):
 
     for label, err in zip(labels, vol_err):
         if label == 0:
-            labels_err.append(10)  # Assign a high error for zero labels
+            labels_err.append(1)  # Assign a high error for zero labels
         else:
-            labels_err.append(1/(label))  # Inverse error for each label
+            labels_err.append(10000)  # Inverse error for each label
 
     labels_err = tf.convert_to_tensor(labels_err, dtype=tf.float32)
     labels = tf.convert_to_tensor(labels, dtype=tf.float32)
@@ -192,8 +182,11 @@ if __name__ == "__main__":
     number_of_modes = 1290
     n_features = experimental_data.shape[0]
     n_dim = 3
-    iteration_num = 100
+    iteration_num = 32
     seed = 1
+    n_cores = 32
+    epochs = 100
+    lr = 0.1
     hkl_list = experimental_data[["h", "k", "l"]].values.tolist()
 
     features = tf.convert_to_tensor(hkl_list, dtype=tf.float32)
@@ -207,9 +200,9 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)  # Use 'spawn' to avoid issues with TensorFlow and multiprocessing
 
     pool = mp.Pool(
-        processes=4,
+        processes=n_cores,
         initializer=init_worker,
-        initargs=(seed,features, labels, labels_err, matrix, max_mode_amps)
+        initargs=(seed,features, labels, labels_err, matrix, max_mode_amps , epochs , lr)
     )
     #spawn n processes
 
@@ -227,15 +220,17 @@ if __name__ == "__main__":
 
     histogram_matrix = np.zeros((number_of_modes, iteration_num), dtype=np.float32)
     loss_matrix = np.zeros((iteration_num,), dtype=np.float32)
+    r_factors = np.zeros((iteration_num,), dtype=np.float32)
+    each_iteration_loss = np.zeros((iteration_num,epochs), dtype=np.float32)
 
     for i, res in enumerate(results):
         histogram_matrix[: , i] = res[0]
         loss_matrix[i] = res[1]
-   
-    savedir = f'results/{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        each_iteration_loss[i] = res[3]
+        r_factors[i] = res[4]
+
+    savedir = f'results/{datetime.now().strftime("%Y%m%d_%H%M%S")}_iters{iteration_num}_epochs{epochs}_lr{lr}'
     os.makedirs(savedir, exist_ok=True)  # Ensure the directory exists
-    np.savez(os.path.join(savedir, 'all_result_matrix.npz'), histogram_matrix=histogram_matrix , loss_matrix=loss_matrix)
+    np.savez(os.path.join(savedir, 'all_result_matrix.npz'), histogram_matrix=histogram_matrix , loss_matrix=loss_matrix , each_iteration_loss=each_iteration_loss, r_factors=r_factors)
 
     print(f"Total time taken: {time() - t0:.2f} seconds")
-
-
