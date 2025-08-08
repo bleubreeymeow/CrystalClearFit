@@ -129,7 +129,7 @@ def get_atomic_form_factor(qnorm, atom):
 
 
 
-def get_structure_factors(hkl_batch, structure, parent_hkl):
+def get_structure_factors(hkl_batch, structure):
     """
     Vectorized structure factor calculation.
 
@@ -148,8 +148,6 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     https://advanced.onlinelibrary.wiley.com/doi/10.1002/aenm.202300760
 
     """
-
-    parent_hkl= tf.convert_to_tensor(hkl_batch, dtype=tf.float32)
     # Get atomic types and positions
     atoms = [a for a, _, _ in structure]
     positions = tf.stack([tf.convert_to_tensor(p, dtype=tf.float32) for _, _, p in structure])  # [A, 3]
@@ -182,9 +180,9 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     # F_hkl = tf.cast(F_hkl, tf.complex64) * tf.cast(tf.exp(-w * qnorms ** 2), tf.complex64)  # [N]
 
     # # Generate all coordinates (0 to 25 inclusive)
-    x = tf.range(0, 5, dtype=tf.float32)  # Use float32 for scaling
-    y = tf.range(0, 5, dtype=tf.float32)
-    z = tf.range(0, 15, dtype=tf.float32)
+    x = tf.range(0, 1, dtype=tf.float32)  # Use float32 for scaling
+    y = tf.range(0, 1, dtype=tf.float32)
+    z = tf.range(0, 1, dtype=tf.float32)
 
     # Create grid and stack into a tensor of shape [20, 20, 20, 3]
     xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
@@ -205,24 +203,16 @@ def get_structure_factors(hkl_batch, structure, parent_hkl):
     sum_fourier_exp = tf.reduce_sum(fourier_exp, axis=1) 
     F_hkl = F_hkl * sum_fourier_exp
 
-    print('F_hkl:', F_hkl)
-
     return F_hkl
 
 
 
 def shift_atoms(matrix , a):    
     a_2d = tf.reshape(a , [-1 , 1])
-    print(a_2d.shape)
     res = matrix @ a_2d
-    
-    ##print('res is', all(sum(row) == 0 for row in res))
-    #print shape of the tensor
-    print(res.shape)
     result = res
-
     tensor_result = tf.convert_to_tensor(result)
-    print(tensor_result.shape)
+
     return tensor_result
 
 

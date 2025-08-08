@@ -182,7 +182,7 @@ def get_structure_factors(hkl_batch, structure):
     # # Generate all coordinates (0 to 25 inclusive)
     x = tf.range(0, 1, dtype=tf.float32)  # Use float32 for scaling
     y = tf.range(0, 1, dtype=tf.float32)
-    z = tf.range(0, 600, dtype=tf.float32)
+    z = tf.range(0, 1, dtype=tf.float32)
 
     # Create grid and stack into a tensor of shape [20, 20, 20, 3]
     xx, yy, zz = tf.meshgrid(x, y, z, indexing='ij')
